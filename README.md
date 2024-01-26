@@ -36,7 +36,15 @@ To run the System Monitoring Tool, you'll need the following Python libraries:
 - `OpenHardwareMonitor`: This is Software you will have to download in order to get device Temps.
 - https://openhardwaremonitor.org/downloads/
 
-### Linux and Raspberry Pi
+### Linux
+
+- `os`: Provides a way of interacting with the operating system.
+- `psutil`: A cross-platform library for accessing system details and managing processes.
+- `rich`: A library for adding rich terminal text and styling.
+- `time`: Standard Python time-related functions.
+- `GPUtil`: Used for gpu device information and monitoring
+
+### Raspberry Pi
 
 - `os`: Provides a way of interacting with the operating system.
 - `psutil`: A cross-platform library for accessing system details and managing processes.
