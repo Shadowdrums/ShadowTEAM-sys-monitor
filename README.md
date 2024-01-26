@@ -34,6 +34,7 @@ To run the System Monitoring Tool, you'll need the following Python libraries:
 - `wmi`: Windows Management Instrumentation, providing access to system resources.
 - `time`: Standard Python time-related functions.
 - `OpenHardwareMonitor`: This is Software you will have to download in order to get device Temps.
+- https://openhardwaremonitor.org/downloads/
 
 ### Linux and Raspberry Pi
 
