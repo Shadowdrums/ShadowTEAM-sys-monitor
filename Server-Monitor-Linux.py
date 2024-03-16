@@ -15,18 +15,42 @@ def get_cpu_info():
 def get_gpu_info():
     try:
         gpu_info = os.popen("nvidia-smi --query-gpu=name --format=csv,noheader").read().strip()
-        return gpu_info
+        return gpu_info.split("\n")
     except Exception as e:
         print(f"Error getting GPU information: {e}")
-        return "N/A"
+        return ["N/A"]
 
 def get_gpu_usage():
     try:
         gpu_usage = os.popen("nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits").read().strip()
-        return float(gpu_usage)
+        return [float(usage) for usage in gpu_usage.split("\n")]
     except Exception as e:
         print(f"Error getting GPU usage: {e}")
-        return 0.0
+        return []
+
+def get_cpu_cores():
+    try:
+        cpu_cores = psutil.cpu_count(logical=False)
+        return cpu_cores
+    except Exception as e:
+        print(f"Error getting CPU cores: {e}")
+        return 0
+
+def get_cpu_threads():
+    try:
+        cpu_threads = psutil.cpu_count(logical=True)
+        return cpu_threads
+    except Exception as e:
+        print(f"Error getting CPU threads: {e}")
+        return 0
+
+def get_cpu_usage():
+    try:
+        cpu_percent = psutil.cpu_percent(percpu=True)
+        return cpu_percent
+    except Exception as e:
+        print(f"Error getting CPU usage: {e}")
+        return []
 
 def get_cpu_temperature():
     try:
@@ -41,11 +65,11 @@ def get_cpu_temperature():
 
 def get_gpu_temperature():
     try:
-        gpu_temperature = os.popen("nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits").read().strip()
-        return float(gpu_temperature)
+        gpu_temperatures = os.popen("nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits").read().strip()
+        return [float(temp) for temp in gpu_temperatures.split("\n")]
     except Exception as e:
-        print(f"Error getting GPU temperature: {e}")
-        return None
+        print(f"Error getting GPU temperatures: {e}")
+        return []
 
 def celsius_to_fahrenheit(celsius):
     return (celsius * 9/5) + 32
@@ -82,19 +106,28 @@ def get_active_users():
 
 def get_usage():
     try:
-        cpu_percent = psutil.cpu_percent(percpu=True)
-        ram_percent = psutil.virtual_memory().percent
-        gpu_percent = get_gpu_usage()
-        total_ram = round(psutil.virtual_memory().total / (1024.0 ** 3), 2)
-        cpu_temp_celsius, cpu_temp_fahrenheit = get_cpu_temperature()
-        gpu_temp_celsius = get_gpu_temperature()
-        total_storage_gb, used_storage_gb, free_storage_gb, used_storage_percent = get_main_storage_usage()
-        sent_mb, recv_mb = get_network_usage()
-        active_users = get_active_users()
-        return cpu_percent, ram_percent, gpu_percent, total_ram, cpu_temp_celsius, cpu_temp_fahrenheit, gpu_temp_celsius, total_storage_gb, used_storage_gb, free_storage_gb, used_storage_percent, sent_mb, recv_mb, active_users
+        cpu_percent, ram_percent, cpu_cores, cpu_threads, gpu_percent, total_ram, cpu_temp_celsius, cpu_temp_fahrenheit, gpu_temperatures, total_storage_gb, used_storage_gb, free_storage_gb, used_storage_percent, sent_mb, recv_mb, active_users, gpu_models = (
+            get_cpu_usage(),
+            psutil.virtual_memory().percent,
+            get_cpu_cores(),
+            get_cpu_threads(),
+            get_gpu_usage(),
+            round(psutil.virtual_memory().total / (1024.0 ** 3), 2),
+            *get_cpu_temperature(),
+            get_gpu_temperature(),
+            *get_main_storage_usage(),
+            *get_network_usage(),
+            get_active_users(),
+            get_gpu_info()  # Added to fetch GPU models
+        )
+        return (
+            cpu_percent, ram_percent, cpu_cores, cpu_threads, gpu_percent, total_ram, cpu_temp_celsius, 
+            cpu_temp_fahrenheit, gpu_temperatures, total_storage_gb, used_storage_gb, free_storage_gb, 
+            used_storage_percent, sent_mb, recv_mb, active_users, gpu_models
+        )
     except Exception as e:
         print(f"Error getting system usage: {e}")
-        return [], 0, 0, 0, None, None, None, 0, 0, 0, 0, 0, 0, []
+        return [], 0, 0, 0, [], 0, None, None, [], 0, 0, 0, 0, 0, 0, [], []
 
 def render_live_graph(console):
     while True:
@@ -112,9 +145,10 @@ def render_live_graph(console):
 
 def display_system_info(console):
     cpu_model = get_cpu_info()
-    gpu_model = get_gpu_info()
+    gpu_models = get_gpu_info()
     console.print(f"{'CPU Model':<25}: {cpu_model}")
-    console.print(f"{'GPU Model':<25}: {gpu_model}")
+    for i, gpu_model in enumerate(gpu_models):
+        console.print(f"{'GPU Model' if i == 0 else '':<25}: {gpu_model}")
 
 def display_live_graph(console):
     # Create a new table
@@ -125,35 +159,44 @@ def display_live_graph(console):
     table.add_column("Graph", justify="left")
 
     # Add rows to the table dynamically based on live data
-    cpu_percent, ram_percent, gpu_percent, total_ram, cpu_temp_celsius, cpu_temp_fahrenheit, gpu_temp_celsius, total_storage_gb, used_storage_gb, free_storage_gb, used_storage_percent, sent_mb, recv_mb, active_users = get_usage()
+    cpu_percent, ram_percent, cpu_cores, cpu_threads, gpu_percent, total_ram, cpu_temp_celsius, cpu_temp_fahrenheit, gpu_temperatures, total_storage_gb, used_storage_gb, free_storage_gb, used_storage_percent, sent_mb, recv_mb, active_users, gpu_models = get_usage()
 
-    table.add_row("Cores", "", "4", "")
-    table.add_row("Overall CPU Usage", f"{cpu_percent[0]:.2f}%", f"[{'█' * int(cpu_percent[0] / 5)}{' ' * (20 - int(cpu_percent[0] / 5))}]", "")
-    for i in range(1, 5):
-        table.add_row(f"Core {i}", f"{cpu_percent[i-1]:.2f}%", f"[{'█' * int(cpu_percent[i-1] / 5)}{' ' * (20 - int(cpu_percent[i-1] / 5))}]", "")
+    # Add CPU rows
+    if cpu_cores:
+        table.add_row("Cores", "", f"{cpu_cores} (Threads: {cpu_threads})", "")
+        for i, cpu_percent_core in enumerate(cpu_percent):
+            table.add_row(f"Core {i + 1}", f"{cpu_percent_core:.2f}%", f"[{'█' * int(cpu_percent_core / 5)}{' ' * (20 - int(cpu_percent_core / 5))}]", "")
+        overall_cpu_percent = sum(cpu_percent) / len(cpu_percent)
+        table.add_row("Overall CPU Usage", f"{overall_cpu_percent:.2f}%", f"[{'█' * int(overall_cpu_percent / 5)}{' ' * (20 - int(overall_cpu_percent / 5))}]", "")
 
-    table.add_row("GPU Model", "", get_gpu_info(), "")
-    table.add_row("GPU Usage", f"{gpu_percent:.2f}%", f"[{'█' * int(gpu_percent / 5)}{' ' * (20 - int(gpu_percent / 5))}]", "")
-    table.add_row("Total RAM", "", f"{total_ram} GB", "")
-    table.add_row("Used RAM", f"{ram_percent:.2f}%", f"[{'█' * int(ram_percent / 5)}{' ' * (20 - int(ram_percent / 5))}]", "")
+    # Add GPU rows
+    for i, gpu_model in enumerate(gpu_models):
+        table.add_row(f"GPU {i + 1} Model", "", gpu_model, "")
+        gpu_percent_val = gpu_percent[i] if gpu_percent else 0
+        gpu_temperature_val = gpu_temperatures[i] if gpu_temperatures else None
+        table.add_row(f"GPU {i + 1} Usage", f"{gpu_percent_val:.2f}%", f"[{'█' * int(gpu_percent_val / 5)}{' ' * (20 - int(gpu_percent_val / 5))}]", "")
+        table.add_row(f"GPU {i + 1} Temperature", f"{gpu_temperature_val:.1f}°C" if gpu_temperature_val is not None else "N/A", f"{'█' * int(gpu_temperature_val / 5)}{' ' * (20 - int(gpu_temperature_val / 5))}" if gpu_temperature_val is not None else "", "")
 
+    if ram_percent:
+        table.add_row("Total RAM", "", f"{total_ram} GB", "")
+        table.add_row("Used RAM", f"{ram_percent:.2f}%", f"[{'█' * int(ram_percent / 5)}{' ' * (20 - int(ram_percent / 5))}]", "")
     if cpu_temp_celsius is not None:
         table.add_row("CPU Temperature", f"{cpu_temp_celsius:.1f}°C / {cpu_temp_fahrenheit:.1f}°F", f"{'█' * int(cpu_temp_celsius / 5)}{' ' * (20 - int(cpu_temp_celsius / 5))}", "")
     else:
         table.add_row("CPU Temperature", "N/A", "", "")
 
-    if gpu_temp_celsius is not None:
-        table.add_row("GPU Temperature", f"{gpu_temp_celsius:.1f}°C", f"{'█' * int(gpu_temp_celsius / 5)}{' ' * (20 - int(gpu_temp_celsius / 5))}", "")
-    else:
-        table.add_row("GPU Temperature", "N/A", "", "")
+    if used_storage_percent:
+        table.add_row("Main Storage Usage", f"{used_storage_percent:.2f}%", f"[{'█' * int(used_storage_percent / 5)}{' ' * (20 - int(used_storage_percent / 5))}]", "")
+        table.add_row("Total Storage", "", f"{total_storage_gb} GB", "")
+        table.add_row("Used Storage", "", f"{used_storage_gb} GB", "")
+        table.add_row("Available Storage", "", f"{free_storage_gb} GB", "")
 
-    table.add_row("Main Storage Usage", f"{used_storage_percent:.2f}%", f"[{'█' * int(used_storage_percent / 5)}{' ' * (20 - int(used_storage_percent / 5))}]", "")
-    table.add_row("Total Storage", "", f"{total_storage_gb} GB", "")
-    table.add_row("Used Storage", "", f"{used_storage_gb} GB", "")
-    table.add_row("Available Storage", "", f"{free_storage_gb} GB", "")
-    table.add_row("Network Sent", f"{sent_mb:.2f} MB", "", "")
-    table.add_row("Network Received", f"{recv_mb:.2f} MB", "", "")
-    table.add_row("Active Users", ", ".join(active_users), "", "")
+    if sent_mb:
+        table.add_row("Network Sent", f"{sent_mb:.2f} MB", "", "")
+        table.add_row("Network Received", f"{recv_mb:.2f} MB", "", "")
+
+    if active_users:
+        table.add_row("Active Users", ", ".join(active_users), "", "")
 
     # Print the table
     console.print(table)
