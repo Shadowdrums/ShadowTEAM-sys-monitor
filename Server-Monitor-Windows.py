@@ -58,12 +58,15 @@ def get_storage_info():
         partitions = psutil.disk_partitions(all=True)  # Include all partitions including network drives
         storage_info = []
         for partition in partitions:
-            usage = psutil.disk_usage(partition.mountpoint)
-            total_gb = round(usage.total / (1024.0 ** 3), 2)
-            used_gb = round(usage.used / (1024.0 ** 3), 2)
-            free_gb = round(usage.free / (1024.0 ** 3), 2)
-            used_percent = usage.percent
-            storage_info.append((partition.device, partition.device.split(":")[0], total_gb, used_gb, free_gb, used_percent))
+            try:
+                usage = psutil.disk_usage(partition.mountpoint)
+                total_gb = round(usage.total / (1024.0 ** 3), 2)
+                used_gb = round(usage.used / (1024.0 ** 3), 2)
+                free_gb = round(usage.free / (1024.0 ** 3), 2)
+                used_percent = usage.percent
+                storage_info.append((partition.device, partition.device.split(":")[0], total_gb, used_gb, free_gb, used_percent))
+            except Exception as e:
+                print(f"Error getting usage information for partition {partition.device}: {e}")
         return storage_info
     except Exception as e:
         print(f"Error getting storage information: {e}")
