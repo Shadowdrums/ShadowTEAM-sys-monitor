@@ -1,12 +1,8 @@
 import os
-import time
-
 import psutil
-from psutil._common import suser
-from rich.console import Console, JustifyMethod
-from rich.live import Live
+from rich.console import Console
 from rich.table import Table
-
+import time
 
 def get_cpu_info():
     try:
@@ -102,7 +98,7 @@ def get_network_usage():
 
 def get_active_users():
     try:
-        active_users: list[suser] = [user.name for user in psutil.users()]
+        active_users = [user.name for user in psutil.users()]
         return active_users
     except Exception as e:
         print(f"Error getting active users: {e}")
@@ -122,7 +118,7 @@ def get_usage():
             *get_main_storage_usage(),
             *get_network_usage(),
             get_active_users(),
-            get_gpu_info()
+            get_gpu_info()  # Added to fetch GPU models
         )
         return (
             cpu_percent, ram_percent, cpu_cores, cpu_threads, gpu_percent, total_ram, cpu_temp_celsius, 
@@ -133,80 +129,81 @@ def get_usage():
         print(f"Error getting system usage: {e}")
         return [], 0, 0, 0, [], 0, None, None, [], 0, 0, 0, 0, 0, 0, [], []
 
+def render_live_graph(console):
+    while True:
+        # Clear the console
+        console.clear()
 
-def generate_table():
-    table = Table(
-        show_header=True, 
-        header_style="bold magenta", 
-        width = os.get_terminal_size().columns, 
-        title="System Information", 
-        title_style="bold", 
-        expand=True, 
-        show_lines=False
-    )
-    table.add_column("Component", justify="left", min_width=20, max_width=40)
-    table.add_column("Info", justify="left", min_width=15, max_width=40)
-    table.add_column("Usage", justify="left", min_width=10, max_width=40)
+        # Display the system information
+        display_system_info(console)
 
+        # Display the live graph
+        display_live_graph(console)
+
+        # Sleep for a short duration (adjust as needed)
+        time.sleep(1)
+
+def display_system_info(console):
+    cpu_model = get_cpu_info()
+    gpu_models = get_gpu_info()
+    console.print(f"{'CPU Model':<25}: {cpu_model}")
+    for i, gpu_model in enumerate(gpu_models):
+        console.print(f"{'GPU Model' if i == 0 else '':<25}: {gpu_model}")
+
+def display_live_graph(console):
+    # Create a new table
+    table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("Component", justify="left")
+    table.add_column("Info", justify="left")
+    table.add_column("Usage", justify="left")
+    table.add_column("Graph", justify="left")
+
+    # Add rows to the table dynamically based on live data
     cpu_percent, ram_percent, cpu_cores, cpu_threads, gpu_percent, total_ram, cpu_temp_celsius, cpu_temp_fahrenheit, gpu_temperatures, total_storage_gb, used_storage_gb, free_storage_gb, used_storage_percent, sent_mb, recv_mb, active_users, gpu_models = get_usage()
 
-    table.add_row("== CPU Usage ==", "== CPU Usage ==", "== CPU Usage ==")
+    # Add CPU rows
     if cpu_cores:
-        table.add_row("Cores", "", f"{cpu_cores} (Threads: {cpu_threads})")
+        table.add_row("Cores", "", f"{cpu_cores} (Threads: {cpu_threads})", "")
         for i, cpu_percent_core in enumerate(cpu_percent):
-            table.add_row(f"Core {i + 1}", f"{cpu_percent_core:.2f}%", f"[{'█' * int(cpu_percent_core / 5)}{' ' * (20 - int(cpu_percent_core / 5))}]")
+            table.add_row(f"Core {i + 1}", f"{cpu_percent_core:.2f}%", f"[{'█' * int(cpu_percent_core / 5)}{' ' * (20 - int(cpu_percent_core / 5))}]", "")
         overall_cpu_percent = sum(cpu_percent) / len(cpu_percent)
-        table.add_row("Overall CPU Usage", f"{overall_cpu_percent:.2f}%", f"[{'█' * int(overall_cpu_percent / 5)}{' ' * (20 - int(overall_cpu_percent / 5))}]", end_section=True)
-        table.add_section()
+        table.add_row("Overall CPU Usage", f"{overall_cpu_percent:.2f}%", f"[{'█' * int(overall_cpu_percent / 5)}{' ' * (20 - int(overall_cpu_percent / 5))}]", "")
 
-    table.add_row("== GPU Usage ==", "== GPU Usage ==", "== GPU Usage ==")
+    # Add GPU rows
     for i, gpu_model in enumerate(gpu_models):
-        table.add_row(f"GPU {i + 1} Model", gpu_model, gpu_model)
+        table.add_row(f"GPU {i + 1} Model", "", gpu_model, "")
         gpu_percent_val = gpu_percent[i] if gpu_percent else 0
         gpu_temperature_val = gpu_temperatures[i] if gpu_temperatures else None
-        table.add_row(f"GPU {i + 1} Usage", f"{gpu_percent_val:.2f}%", f"[{'█' * int(gpu_percent_val / 5)}{' ' * (20 - int(gpu_percent_val / 5))}]")
-        table.add_row(f"GPU {i + 1} Temperature", f"{gpu_temperature_val:.1f}°C" if gpu_temperature_val is not None else "N/A", f"[{'█' * int(gpu_temperature_val / 5)}{' ' * (20 - int(gpu_temperature_val / 5))}]" if gpu_temperature_val is not None else "")
-    table.add_row(end_section=True)
-    table.add_section()
+        table.add_row(f"GPU {i + 1} Usage", f"{gpu_percent_val:.2f}%", f"[{'█' * int(gpu_percent_val / 5)}{' ' * (20 - int(gpu_percent_val / 5))}]", "")
+        table.add_row(f"GPU {i + 1} Temperature", f"{gpu_temperature_val:.1f}°C" if gpu_temperature_val is not None else "N/A", f"{'█' * int(gpu_temperature_val / 5)}{' ' * (20 - int(gpu_temperature_val / 5))}" if gpu_temperature_val is not None else "", "")
 
-    table.add_row("== RAM & CPU Temp ==", "== RAM & CPU Temp ==", "== RAM & CPU Temp ==")
     if ram_percent:
-        table.add_row("Total RAM", "", f"{total_ram} GB")
-        table.add_row("Used RAM", f"{ram_percent:.2f}%", f"[{'█' * int(ram_percent / 5)}{' ' * (20 - int(ram_percent / 5))}]")
+        table.add_row("Total RAM", "", f"{total_ram} GB", "")
+        table.add_row("Used RAM", f"{ram_percent:.2f}%", f"[{'█' * int(ram_percent / 5)}{' ' * (20 - int(ram_percent / 5))}]", "")
     if cpu_temp_celsius is not None:
-        table.add_row("CPU Temperature", f"{cpu_temp_celsius:.1f}°C / {cpu_temp_fahrenheit:.1f}°F", f"{'█' * int(cpu_temp_celsius / 5)}{' ' * (20 - int(cpu_temp_celsius / 5))}")
+        table.add_row("CPU Temperature", f"{cpu_temp_celsius:.1f}°C / {cpu_temp_fahrenheit:.1f}°F", f"{'█' * int(cpu_temp_celsius / 5)}{' ' * (20 - int(cpu_temp_celsius / 5))}", "")
     else:
-        table.add_row("CPU Temperature", "N/A", "", end_section=True)
-    table.add_section()
+        table.add_row("CPU Temperature", "N/A", "", "")
 
     if used_storage_percent:
-        table.add_row("== Disk Usage ==", "== Disk Usage ==", "== Disk Usage ==")
-        table.add_row("Main Storage Usage", f"{used_storage_percent:.2f}%", f"[{'█' * int(used_storage_percent / 5)}{' ' * (20 - int(used_storage_percent / 5))}]")
-        table.add_row("Total Storage", "", f"{total_storage_gb} GB")
-        table.add_row("Used Storage", "", f"{used_storage_gb} GB")
-        table.add_row("Available Storage", "", f"{free_storage_gb} GB", end_section=True)
-        table.add_section()
+        table.add_row("Main Storage Usage", f"{used_storage_percent:.2f}%", f"[{'█' * int(used_storage_percent / 5)}{' ' * (20 - int(used_storage_percent / 5))}]", "")
+        table.add_row("Total Storage", "", f"{total_storage_gb} GB", "")
+        table.add_row("Used Storage", "", f"{used_storage_gb} GB", "")
+        table.add_row("Available Storage", "", f"{free_storage_gb} GB", "")
 
     if sent_mb:
-        table.add_row("Network Sent", f"{sent_mb:.2f} MB", "")
-        table.add_row("Network Received", f"{recv_mb:.2f} MB", "", end_section=True)
-        table.add_section()
+        table.add_row("Network Sent", f"{sent_mb:.2f} MB", "", "")
+        table.add_row("Network Received", f"{recv_mb:.2f} MB", "", "")
 
-    if active_users and isinstance(active_users, list):
-        table.add_row()
-        active_users_str: str = ", ".join([str(ea.name) for ea in active_users if isinstance(ea, suser)])
-        table.add_row("Active Users", active_users_str, "", end_section=True)
+    if active_users:
+        table.add_row("Active Users", ", ".join(active_users), "", "")
 
-    return table
+    # Print the table
+    console.print(table)
 
 def main():
-    os.system('cls' if os.name == 'nt' else 'clear')
     console = Console()
-
-    with Live(generate_table(), console=console, refresh_per_second=2, auto_refresh=True, transient=True) as live:
-        while True:
-            live.update(generate_table())
-            time.sleep(0.4)
+    render_live_graph(console)
 
 if __name__ == "__main__":
     main()
